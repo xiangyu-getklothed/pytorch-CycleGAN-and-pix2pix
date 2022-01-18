@@ -3,7 +3,18 @@ import numpy as np
 import cv2
 import argparse
 from multiprocessing import Pool
+import numpy as np
 
+def square_padding(img_size):
+    """
+    Returns:
+        padding to make the image square as: (left, top, right, bot)
+    """
+    h, w, _ = img_size
+    square_side = max(h,w)
+    
+    return ((square_side - h)//2, (square_side - w) //2,
+        int(ceil((square_side - h) /2.0)), int(ceil((square_side - w) /2.0)))
 
 def image_write(path_A, path_B, path_AB):
     im_A = cv2.imread(path_A, 1) # python2: cv2.CV_LOAD_IMAGE_COLOR; python3: cv2.IMREAD_COLOR
@@ -60,6 +71,11 @@ for sp in splits:
             else:
                 im_A = cv2.imread(path_A, 1) # python2: cv2.CV_LOAD_IMAGE_COLOR; python3: cv2.IMREAD_COLOR
                 im_B = cv2.imread(path_B, 1) # python2: cv2.CV_LOAD_IMAGE_COLOR; python3: cv2.IMREAD_COLOR
+                H, W, _ = im_B.shape
+                top, left, bottom, right = square_padding(im_B)
+                im_B_empty = np.zeros((H + top + bottom, W + left + right, 3))
+                im_B_empty[top: top + H, left: left + W:, :] = im_B
+                im_B = cv2.resize(im_B_empty, (512, 512))
                 im_AB = np.concatenate([im_A, im_B], 1)
                 cv2.imwrite(path_AB, im_AB)
 if not args.no_multiprocessing:
