@@ -1,7 +1,10 @@
 import torch
 from .base_model import BaseModel
 from . import networks
-
+import cv2
+import numpy as np
+from face_swap.lib.bilayer_face_swapper import BilayerFaceSwapper
+from util import util 
 
 class Pix2PixModel(BaseModel):
     """ This class implements the pix2pix model, for learning a mapping from input images to output images given paired data.
@@ -33,6 +36,7 @@ class Pix2PixModel(BaseModel):
         if is_train:
             parser.set_defaults(pool_size=0, gan_mode='vanilla')
             parser.add_argument('--lambda_L1', type=float, default=100.0, help='weight for L1 loss')
+            parser.add_argument('--use_mask', action='store_true', help='use face mask to compute the L1 loss')
 
         return parser
 
@@ -43,10 +47,14 @@ class Pix2PixModel(BaseModel):
             opt (Option class)-- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
         BaseModel.__init__(self, opt)
+        self.use_mask = self.opt.use_mask
+
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
         self.loss_names = ['G_GAN', 'G_L1', 'D_real', 'D_fake']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         self.visual_names = ['real_A', 'fake_B', 'real_B']
+        if self.use_mask:
+            self.visual_names.append('fake_B_masked')
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>
         if self.isTrain:
             self.model_names = ['G', 'D']
@@ -70,6 +78,11 @@ class Pix2PixModel(BaseModel):
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
 
+        if self.isTrain and self.use_mask:
+            self.face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+            self.face_swapper = BilayerFaceSwapper()
+            self.no_face = False
+
     def set_input(self, input):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
 
@@ -83,9 +96,31 @@ class Pix2PixModel(BaseModel):
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
+        if self.use_mask:
+            self.no_face = False
+            self.real_B_np = util.tensor2im(self.real_B)[:, :, ::-1]
+            H, W, _ = self.real_B_np.shape
+            self.real_B_gray = cv2.cvtColor(self.real_B_np, cv2.COLOR_BGR2GRAY)
+            faces = self.face_cascade.detectMultiScale(self.real_B_gray, 1.3, 5)
+            if len(faces) == 0:
+                self.no_face = True
+            else:
+                for (x, y, w, h) in faces:
+                    x, y = max(x - w // 8, 0), max(y - h // 8, 0)
+                    w, h = w * 5 // 4, h * 5 // 4
+                    self.real_B_face = self.real_B_np[y: y + h, x: x + w, :]
+                    self.real_B_face_mask_np = self.face_swapper.alpha_for_face(self.real_B_face, (h, w), parts_type='face_only', smoothing_type='')
+                    self.real_B_face_mask_np_full = np.zeros((H, W))
+                    self.real_B_face_mask_np_full[y: y + h, x: x + w] = self.real_B_face_mask_np
+                    self.real_B_face_mask = torch.from_numpy(self.real_B_face_mask_np_full).to(self.device)
+                    break
+
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
         self.fake_B = self.netG(self.real_A)  # G(A)
+        if self.use_mask and not self.no_face:
+            self.fake_B_masked = self.fake_B * (1 - self.real_B_face_mask)
+            self.real_B_masked = self.real_B * (1 - self.real_B_face_mask)
 
     def backward_D(self):
         """Calculate GAN loss for the discriminator"""
@@ -108,7 +143,10 @@ class Pix2PixModel(BaseModel):
         pred_fake = self.netD(fake_AB)
         self.loss_G_GAN = self.criterionGAN(pred_fake, True)
         # Second, G(A) = B
-        self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1
+        if self.use_mask and not self.no_face:
+            self.loss_G_L1 = self.criterionL1(self.fake_B_masked, self.real_B_masked) * self.opt.lambda_L1
+        else:
+            self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1
         # combine loss and calculate gradients
         self.loss_G = self.loss_G_GAN + self.loss_G_L1
         self.loss_G.backward()
