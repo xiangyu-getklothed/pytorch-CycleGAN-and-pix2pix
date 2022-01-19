@@ -107,7 +107,7 @@ class Pix2PixModel(BaseModel):
             else:
                 for (x, y, w, h) in faces:
                     x, y = max(x - w // 8, 0), max(y - h // 8, 0)
-                    w, h = w * 5 // 4, h * 5 // 4
+                    w, h = min(w * 5 // 4, W - x), min(h * 5 // 4, H - y)
                     self.real_B_face = self.real_B_np[y: y + h, x: x + w, :]
                     self.real_B_face_mask_np = self.face_swapper.alpha_for_face(self.real_B_face, (h, w), parts_type='face_only', smoothing_type='')
                     self.real_B_face_mask_np_full = np.zeros((H, W))
