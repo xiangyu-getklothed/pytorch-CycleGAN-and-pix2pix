@@ -36,7 +36,7 @@ class Pix2PixModel(BaseModel):
         if is_train:
             parser.set_defaults(pool_size=0, gan_mode='vanilla')
             parser.add_argument('--lambda_L1', type=float, default=100.0, help='weight for L1 loss')
-            parser.add_argument('--use_mask', action='store_true', help='use face mask to compute the L1 loss')
+        parser.add_argument('--use_mask', action='store_true', help='use face mask to compute the L1 loss')
 
         return parser
 
@@ -109,7 +109,7 @@ class Pix2PixModel(BaseModel):
                     x, y = max(x - w // 8, 0), max(y - h // 8, 0)
                     w, h = min(w * 5 // 4, W - x), min(h * 5 // 4, H - y)
                     self.real_B_face = self.real_B_np[y: y + h, x: x + w, :]
-                    self.real_B_face_mask_np = self.face_swapper.alpha_for_face(self.real_B_face, (h, w), parts_type='face_only', smoothing_type='')
+                    self.real_B_face_mask_np = self.face_swapper.alpha_for_face(self.real_B_face, (h, w), parts_type='', smoothing_type='')
                     self.real_B_face_mask_np_full = np.zeros((H, W))
                     self.real_B_face_mask_np_full[y: y + h, x: x + w] = self.real_B_face_mask_np
                     self.real_B_face_mask = torch.from_numpy(self.real_B_face_mask_np_full).to(self.device)
