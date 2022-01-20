@@ -78,7 +78,7 @@ class Pix2PixModel(BaseModel):
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
 
-        if self.isTrain and self.use_mask:
+        if self.use_mask:
             self.face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
             self.face_swapper = BilayerFaceSwapper()
             self.no_face = False
